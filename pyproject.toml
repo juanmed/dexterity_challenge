@@ -1,0 +1,13 @@
+[project]
+name = "dexterity-challenge"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["comfree_warp"]
+
+[tool.uv.sources]
+comfree_warp = { workspace = true }
+
+[tool.uv.workspace]
+members = ["comfree_warp"]
