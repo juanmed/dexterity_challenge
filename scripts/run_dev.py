@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from dexterity.algorithms.naive import NaiveAlgorithm
+from dexterity.sim import SimConfig
 from dexterity.client import DexterityClient
 from dexterity.runner import GameRunner
 from dexterity.scheduler import GameScheduler
@@ -37,10 +38,15 @@ async def main():
     parser.add_argument("--max-concurrent", type=int, default=500)
     parser.add_argument("--output-dir", default="data/dev", help="Parquet output directory")
     parser.add_argument("--no-storage", action="store_true", help="Disable storage")
-    parser.add_argument("--algorithm", default="naive", choices=["naive", "cpp_so"])
+    parser.add_argument("--algorithm", default="naive", choices=["naive", "cpp_so", "sim_search"])
     parser.add_argument("--so-path", help="Path to .so for cpp_so algorithm")
     parser.add_argument("--resume-game-id", help="Resume an in-progress game")
     parser.add_argument("--base-url", default=None, help="Override API base URL (e.g. http://localhost:8000/challenge/api)")
+    parser.add_argument("--sim-visualize", action="store_true", help="Enable MuJoCo viewer for simulator")
+    parser.add_argument("--sim-visualize-every", type=int, default=5, help="Viewer update interval (settle batches)")
+    parser.add_argument("--sim-stream-host", default="127.0.0.1", help="Remote stream host")
+    parser.add_argument("--sim-stream-port", type=int, default=0, help="Remote stream port (0 disables)")
+    parser.add_argument("--sim-grid-spacing", type=float, default=0.05, help="Candidate grid spacing")
     args = parser.parse_args()
 
     api_key = get_api_key()
@@ -58,6 +64,16 @@ async def main():
             if not args.so_path:
                 raise ValueError("--so-path required for cpp_so algorithm")
             return CppSoAlgorithm(args.so_path)
+        elif args.algorithm == "sim_search":
+            from dexterity.algorithms.sim_search import SimSearchAlgorithm
+            sim_config = SimConfig(
+                visualize=args.sim_visualize,
+                visualize_every=args.sim_visualize_every,
+                stream_host=args.sim_stream_host,
+                stream_port=args.sim_stream_port,
+                grid_spacing=args.sim_grid_spacing,
+            )
+            return SimSearchAlgorithm(sim_config)
         raise ValueError(f"Unknown algorithm: {args.algorithm}")
 
     async with DexterityClient(api_key=api_key, mode="dev", base_url=args.base_url) as client:
