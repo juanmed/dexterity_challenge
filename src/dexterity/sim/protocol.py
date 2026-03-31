@@ -37,6 +37,10 @@ class SimConfig:
     unsettled_penalty: float = 0.5
     grid_spacing: float = 0.05
     warp_device: str = "cuda:0"
+    visualize: bool = False
+    visualize_every: int = 5
+    stream_host: str = "127.0.0.1"
+    stream_port: int = 0
 
 
 class PhysicsSim(Protocol):

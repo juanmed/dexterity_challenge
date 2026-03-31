@@ -116,6 +116,35 @@ uv run pytest tests/test_comfree_sim.py
 uv run python tests/bench_simulator.py
 ```
 
+## Visualization
+
+### Local MuJoCo viewer
+
+Run the simulator with the built-in MuJoCo passive viewer (world 0):
+
+```bash
+uv run python scripts/run_dev.py 1 --algorithm sim_search --sim-visualize
+```
+
+Optional: reduce viewer updates (settle batches) for speed:
+
+```bash
+uv run python scripts/run_dev.py 1 --algorithm sim_search --sim-visualize --sim-visualize-every 10
+```
+
+### Remote visualization (headless streaming)
+
+Start the simulator with streaming enabled:
+
+```bash
+uv run python scripts/run_dev.py 1 --algorithm sim_search --sim-stream-host 127.0.0.1 --sim-stream-port 7000
+```
+
+Notes:
+- Streaming uses the `StreamServer` protocol in `comfree_warp/test_headless/streaming.py`.
+- The server sends the MuJoCo model XML plus state snapshots over TCP.
+- Use `--sim-visualize` for local display or `--sim-stream-port` for remote display; both can be enabled.
+
 ### Optional: Activate existing virtual env
 
 If you want to reuse the active environment instead of UV's `.venv`:
@@ -129,4 +158,3 @@ uv run --active pytest
 - `tests/test_comfree_sim.py` requires CUDA; it will skip if no GPU is available.
 - The simulator currently uses CPU stability checks for footprint support ratio; GPU kernels can be added later if needed.
 - ComFree parameters (`comfree_stiffness`, `comfree_damping`, friction) remain configurable in `SimConfig` for tuning.
-

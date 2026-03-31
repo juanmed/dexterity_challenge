@@ -12,6 +12,30 @@ def build_truck_model(
     timestep: float = 0.002,
     friction: float = 1.0,
 ) -> tuple[mujoco.MjModel, mujoco.MjData]:
+    spec = build_truck_spec(
+        truck=truck,
+        placed_boxes=placed_boxes,
+        candidate_box=candidate_box,
+        dynamic_indices=dynamic_indices,
+        timestep=timestep,
+        friction=friction,
+    )
+
+    mjm = spec.compile()
+    mjd = mujoco.MjData(mjm)
+    mujoco.mj_forward(mjm, mjd)
+
+    return (mjm, mjd)
+
+
+def build_truck_spec(
+    truck: TruckDims,
+    placed_boxes: list[PlacedBox],
+    candidate_box: Box,
+    dynamic_indices: list[int] | None = None,
+    timestep: float = 0.002,
+    friction: float = 1.0,
+) -> mujoco.MjSpec:
     spec = mujoco.MjSpec()
 
     spec.option.timestep = timestep
@@ -56,7 +80,7 @@ def build_truck_model(
         body.pos = placed_box.position
         body.quat = placed_box.orientation_wxyz
 
-        freejoint = body.add_freejoint()
+        body.add_freejoint()
 
         geom = body.add_geom()
         geom.type = mujoco.mjtGeom.mjGEOM_BOX
@@ -70,7 +94,7 @@ def build_truck_model(
     candidate_body = worldbody.add_body()
     candidate_body.pos = [0, 0, 0]
 
-    candidate_freejoint = candidate_body.add_freejoint()
+    candidate_body.add_freejoint()
 
     candidate_geom = candidate_body.add_geom()
     candidate_geom.type = mujoco.mjtGeom.mjGEOM_BOX
@@ -81,11 +105,7 @@ def build_truck_model(
     candidate_geom.condim = 3
     candidate_geom.friction = [friction, 0.05, 0.01]
 
-    mjm = spec.compile()
-    mjd = mujoco.MjData(mjm)
-    mujoco.mj_forward(mjm, mjd)
-
-    return (mjm, mjd)
+    return spec
 
 
 def _quat_from_zaxis(zaxis: list[float]) -> list[float]:

@@ -5,13 +5,19 @@ from dataclasses import dataclass
 import numpy as np
 
 import comfree_warp as cfwarp
+import mujoco
 
 if not hasattr(cfwarp, "put_model"):
     import comfree_warp.comfree_warp as cfwarp
 
 from ..models import Box, PlacedBox, TruckDims
 from .freeze import compute_frozen_offsets
-from .mjcf_builder import build_truck_model, get_candidate_qpos_offset, get_frozen_indices
+from .mjcf_builder import (
+    build_truck_model,
+    build_truck_spec,
+    get_candidate_qpos_offset,
+    get_frozen_indices,
+)
 from .protocol import PhysicsSim, SimConfig, SimResult
 from .scoring import check_stability_single, compute_density_batch
 
@@ -76,6 +82,11 @@ class ComFreeSimulator(PhysicsSim):
             wp.set_device(self._config.warp_device)
         except Exception:
             pass
+        self._viewer = None
+        self._streamer = None
+        self._stream_model_path = None
+        self._stream_model_nbody = None
+        self._viewer_model_nbody = None
 
     def max_batch_size(self) -> int:
         return self._config.n_candidates
@@ -164,6 +175,17 @@ class ComFreeSimulator(PhysicsSim):
             timestep=config.timestep,
             friction=config.box_friction,
         )
+        spec = None
+        if config.visualize or config.stream_port > 0:
+            spec = build_truck_spec(
+                truck=scene.truck,
+                placed_boxes=scene.placed_boxes,
+                candidate_box=candidate_box,
+                dynamic_indices=scene.dynamic_indices,
+                timestep=config.timestep,
+                friction=config.box_friction,
+            )
+            self._ensure_visualization(mjm, mjd, spec)
 
         m = cfwarp.put_model(
             mjm,
@@ -252,11 +274,16 @@ class ComFreeSimulator(PhysicsSim):
             newly_settled = (~settled) & settled_now
             steps_to_settle[newly_settled] = total_steps
             settled |= settled_now
+            if config.visualize or config.stream_port > 0:
+                if (total_steps // interval) % max(1, config.visualize_every) == 0:
+                    self._update_visualization(mjm, mjd, d, world_id=0)
             if settled.all():
                 break
 
         wp.synchronize()
         qpos_final = d.qpos.numpy()
+        if config.visualize or config.stream_port > 0:
+            self._update_visualization(mjm, mjd, d, world_id=0)
 
         settled_positions = qpos_final[:, candidate_qpos_offset:candidate_qpos_offset + 3]
         settled_orientations = qpos_final[:, candidate_qpos_offset + 3:candidate_qpos_offset + 7]
@@ -322,3 +349,43 @@ class ComFreeSimulator(PhysicsSim):
             density=density.astype(np.float32),
             steps_to_settle=steps_to_settle,
         )
+
+    def _ensure_visualization(self, mjm, mjd, spec) -> None:
+        config = self._config
+        if config.visualize and (self._viewer is None or self._viewer_model_nbody != mjm.nbody):
+            import mujoco.viewer
+            if self._viewer is not None:
+                self._viewer.close()
+            self._viewer = mujoco.viewer.launch_passive(mjm, mjd)
+            self._viewer_model_nbody = mjm.nbody
+        if config.stream_port > 0 and (self._streamer is None or self._stream_model_nbody != mjm.nbody):
+            from comfree_warp.test_headless.streaming import StreamServer
+            import tempfile
+
+            if self._streamer is not None:
+                self._streamer.stop_connection()
+            xml = spec.to_xml()
+            temp = tempfile.NamedTemporaryFile(delete=False, suffix=".xml")
+            temp.write(xml.encode("utf-8"))
+            temp.flush()
+            self._stream_model_path = temp.name
+            self._streamer = StreamServer(
+                model_path=self._stream_model_path,
+                host=config.stream_host,
+                port=config.stream_port,
+            )
+            self._streamer.start()
+            self._stream_model_nbody = mjm.nbody
+
+    def _update_visualization(self, mjm, mjd, data, world_id: int = 0) -> None:
+        if self._viewer is None and self._streamer is None:
+            return
+        qpos = data.qpos.numpy()[world_id]
+        qvel = data.qvel.numpy()[world_id]
+        np.copyto(mjd.qpos, qpos)
+        np.copyto(mjd.qvel, qvel)
+        mujoco.mj_forward(mjm, mjd)
+        if self._viewer is not None:
+            self._viewer.sync()
+        if self._streamer is not None:
+            self._streamer.send_state(mjd)
