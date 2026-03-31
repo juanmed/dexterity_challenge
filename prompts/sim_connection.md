@@ -2,6 +2,13 @@
 
 ## Implementation Plan for the Dexterity AI Foresight Challenge
 
+**Status**: Final (includes Codex gpt-5.1-codex-mini review feedback)
+**Date**: 2026-03-31
+
+### Executive Summary
+
+This plan connects ComFree-Warp (GPU-accelerated complementarity-free contact physics) to the Dexterity box packing challenge. The simulator evaluates candidate box placements in parallel using `nworld` batched GPU simulation. All placed boxes are modeled as freejoints (not static geoms) to detect cascading instability, with old/deep boxes frozen at runtime via velocity zeroing and position locking. Scoring uses the competition's density formula and stability threshold internally. The architecture separates scene building (MJCFBuilder), physics evaluation (ComFreeSimulator), and candidate generation into independent modules behind a `PhysicsSim` protocol.
+
 ---
 
 ## 1. Simulator Choice: ComFree-Warp (Primary)
