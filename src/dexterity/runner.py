@@ -33,47 +33,53 @@ class GameRunner:
         placed_boxes: list[PlacedBox] = []
         density = 0.0
         place_resp: PlaceResponse | None = None
+        termination_reason: str | None = None
 
-        while current_box is not None:
-            t0 = time.monotonic()
-            decision = await self._call_algorithm(current_box, placed_boxes, density)
-            algo_ms = (time.monotonic() - t0) * 1000
+        try:
+            while current_box is not None:
+                t0 = time.monotonic()
+                decision = await self._call_algorithm(current_box, placed_boxes, density)
+                algo_ms = (time.monotonic() - t0) * 1000
 
-            if decision.stop:
-                await self._client.stop(game_id)
-                break
+                if decision.stop:
+                    await self._client.stop(game_id)
+                    break
 
-            await self._writer.enqueue_step(game_id, current_box, decision, density)
+                await self._writer.enqueue_step(game_id, current_box, decision, density)
 
-            t1 = time.monotonic()
-            place_resp = await self._client.place(
-                game_id,
-                current_box.id,
-                decision.position,
-                decision.orientation_wxyz,
-            )
-            latency_ms = (time.monotonic() - t1) * 1000
-            logger.debug(
-                "game=%s step placed box=%s density=%.4f latency=%.0fms",
-                game_id,
-                current_box.id,
-                place_resp.density,
-                latency_ms,
-            )
+                t1 = time.monotonic()
+                place_resp = await self._client.place(
+                    game_id,
+                    current_box.id,
+                    decision.position,
+                    decision.orientation_wxyz,
+                )
+                latency_ms = (time.monotonic() - t1) * 1000
+                logger.debug(
+                    "game=%s step placed box=%s density=%.4f latency=%.0fms",
+                    game_id,
+                    current_box.id,
+                    place_resp.density,
+                    latency_ms,
+                )
 
-            placed_boxes = place_resp.placed_boxes
-            density = place_resp.density
-            current_box = place_resp.current_box
+                placed_boxes = place_resp.placed_boxes
+                density = place_resp.density
+                current_box = place_resp.current_box
 
-            if place_resp.game_status == "completed":
-                break
+                if place_resp.game_status == "completed":
+                    break
 
-        termination_reason = place_resp.termination_reason if place_resp else None
-        await self._writer.enqueue_game_end(game_id, density, termination_reason)
-        self._algorithm.teardown(density, termination_reason)
+            termination_reason = place_resp.termination_reason if place_resp else None
+            await self._writer.enqueue_game_end(game_id, density, termination_reason)
 
-        logger.info("game=%s finished density=%.4f reason=%s", game_id, density, termination_reason)
-        return GameResult(game_id=game_id, density=density, termination_reason=termination_reason)
+            logger.info("game=%s finished density=%.4f reason=%s", game_id, density, termination_reason)
+            return GameResult(game_id=game_id, density=density, termination_reason=termination_reason)
+        finally:
+            try:
+                self._algorithm.teardown(density, termination_reason)
+            except Exception:
+                logger.exception("algorithm teardown failed")
 
     async def resume(self, game_id: str) -> GameResult:
         """Reconnect to an in-progress game and continue from current state."""
@@ -91,33 +97,39 @@ class GameRunner:
         placed_boxes = state.placed_boxes
         density = state.density
         place_resp = None
+        termination_reason: str | None = None
 
-        while current_box is not None:
-            decision = await self._call_algorithm(current_box, placed_boxes, density)
+        try:
+            while current_box is not None:
+                decision = await self._call_algorithm(current_box, placed_boxes, density)
 
-            if decision.stop:
-                await self._client.stop(game_id)
-                break
+                if decision.stop:
+                    await self._client.stop(game_id)
+                    break
 
-            await self._writer.enqueue_step(game_id, current_box, decision, density)
+                await self._writer.enqueue_step(game_id, current_box, decision, density)
 
-            place_resp = await self._client.place(
-                game_id,
-                current_box.id,
-                decision.position,
-                decision.orientation_wxyz,
-            )
-            placed_boxes = place_resp.placed_boxes
-            density = place_resp.density
-            current_box = place_resp.current_box
+                place_resp = await self._client.place(
+                    game_id,
+                    current_box.id,
+                    decision.position,
+                    decision.orientation_wxyz,
+                )
+                placed_boxes = place_resp.placed_boxes
+                density = place_resp.density
+                current_box = place_resp.current_box
 
-            if place_resp.game_status == "completed":
-                break
+                if place_resp.game_status == "completed":
+                    break
 
-        termination_reason = place_resp.termination_reason if place_resp else None
-        await self._writer.enqueue_game_end(game_id, density, termination_reason)
-        self._algorithm.teardown(density, termination_reason)
-        return GameResult(game_id=game_id, density=density, termination_reason=termination_reason)
+            termination_reason = place_resp.termination_reason if place_resp else None
+            await self._writer.enqueue_game_end(game_id, density, termination_reason)
+            return GameResult(game_id=game_id, density=density, termination_reason=termination_reason)
+        finally:
+            try:
+                self._algorithm.teardown(density, termination_reason)
+            except Exception:
+                logger.exception("algorithm teardown failed")
 
     async def _call_algorithm(self, current_box, placed_boxes, density):
         result = self._algorithm.decide(current_box, placed_boxes, len(placed_boxes), density)

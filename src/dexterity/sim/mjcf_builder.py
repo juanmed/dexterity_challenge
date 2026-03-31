@@ -1,7 +1,31 @@
 import math
+import sys
 import mujoco
 
 from ..models import Box, PlacedBox, TruckDims
+
+_MUJOCO_WARNING_HOOK_INSTALLED = False
+
+
+def _install_mujoco_warning_filter() -> None:
+    global _MUJOCO_WARNING_HOOK_INSTALLED
+    if _MUJOCO_WARNING_HOOK_INSTALLED:
+        return
+
+    def _warning(msg: str) -> None:
+        # This warning is extremely noisy in dense packing scenarios and isn't
+        # actionable for the dev pipeline (we already raise ccd_iterations).
+        if "opt.ccd_iterations" in msg:
+            return
+        print(f"MuJoCo warning: {msg}", file=sys.stderr)
+
+    try:
+        mujoco.set_mju_user_warning(_warning)
+    except Exception:
+        # If the binding doesn't support hooking warnings, just proceed.
+        pass
+
+    _MUJOCO_WARNING_HOOK_INSTALLED = True
 
 
 def build_truck_model(
@@ -12,6 +36,7 @@ def build_truck_model(
     timestep: float = 0.002,
     friction: float = 1.0,
 ) -> tuple[mujoco.MjModel, mujoco.MjData]:
+    _install_mujoco_warning_filter()
     spec = build_truck_spec(
         truck=truck,
         placed_boxes=placed_boxes,
@@ -42,6 +67,9 @@ def build_truck_spec(
     spec.option.gravity = [0, 0, -9.81]
     spec.option.integrator = mujoco.mjtIntegrator.mjINT_EULER
     spec.option.cone = mujoco.mjtCone.mjCONE_PYRAMIDAL
+    # Avoid CCD warnings and reduce tunneling-driven instability in dense packing.
+    # MuJoCo defaults to 35; we've observed it to be insufficient for this scene.
+    spec.option.ccd_iterations = 200
 
     total_freejoints = len(placed_boxes) + 1
     if total_freejoints * 6 > 60:

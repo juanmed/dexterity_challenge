@@ -88,6 +88,26 @@ class ComFreeSimulator(PhysicsSim):
         self._stream_model_nbody = None
         self._viewer_model_nbody = None
 
+    def close(self) -> None:
+        if self._viewer is not None:
+            try:
+                self._viewer.close()
+            except Exception:
+                pass
+            self._viewer = None
+        if self._streamer is not None:
+            try:
+                self._streamer.stop_connection()
+            except Exception:
+                pass
+            self._streamer = None
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
+
     def max_batch_size(self) -> int:
         return self._config.n_candidates
 
@@ -287,6 +307,10 @@ class ComFreeSimulator(PhysicsSim):
 
         settled_positions = qpos_final[:, candidate_qpos_offset:candidate_qpos_offset + 3]
         settled_orientations = qpos_final[:, candidate_qpos_offset + 3:candidate_qpos_offset + 7]
+        finite_mask = (
+            np.isfinite(settled_positions).all(axis=1)
+            & np.isfinite(settled_orientations).all(axis=1)
+        )
 
         n_displaced = np.zeros((nworld,), dtype=np.int32)
         if n_placed > 0:
@@ -298,6 +322,9 @@ class ComFreeSimulator(PhysicsSim):
             placed_pos = np.zeros((nworld, 0, 3), dtype=np.float32)
 
         for world_idx in range(nworld):
+            if not finite_mask[world_idx]:
+                n_displaced[world_idx] = n_placed + 1
+                continue
             support_boxes: list[PlacedBox] = []
             for i, pb in enumerate(scene.placed_boxes):
                 support_boxes.append(
@@ -338,15 +365,17 @@ class ComFreeSimulator(PhysicsSim):
             scene.truck.width,
             scene.truck.height,
         )
+        density = density.astype(np.float32)
+        density[~finite_mask] = -np.inf
 
-        is_stable = n_displaced < 3
+        is_stable = (n_displaced < 3) & finite_mask
 
         return SimResult(
             settled_positions=settled_positions,
             settled_orientations=settled_orientations,
             n_displaced=n_displaced,
             is_stable=is_stable,
-            density=density.astype(np.float32),
+            density=density,
             steps_to_settle=steps_to_settle,
         )
 

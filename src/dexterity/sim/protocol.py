@@ -26,8 +26,10 @@ class SimConfig:
     box_friction: float = 1.0
     box_condim: int = 3
     n_candidates: int = 64
-    nconmax_per_world: int = 64
-    njmax_per_world: int = 256
+    # Warp MuJoCo needs enough headroom for contacts/constraints; too-low values
+    # can produce "nefc overflow" warnings, NaNs, and even segfaults in native code.
+    nconmax_per_world: int = 256
+    njmax_per_world: int = 2048
     max_settle_steps: int = 200
     settle_check_interval: int = 10
     settle_ke_threshold: float = 1e-4

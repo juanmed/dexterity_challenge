@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import random
 import time
 from typing import Any
@@ -250,6 +251,12 @@ class DexterityClient:
         position: tuple[float, float, float],
         orientation_wxyz: tuple[float, float, float, float],
     ) -> PlaceResponse:
+        if not all(math.isfinite(float(x)) for x in position):
+            raise ValueError(f"Non-finite placement position for game_id={game_id} box_id={box_id}: {position}")
+        if not all(math.isfinite(float(x)) for x in orientation_wxyz):
+            raise ValueError(
+                f"Non-finite placement orientation_wxyz for game_id={game_id} box_id={box_id}: {orientation_wxyz}"
+            )
         body = {
             "game_id": game_id,
             "box_id": box_id,
